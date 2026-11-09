@@ -1,0 +1,12 @@
+{
+  "name": "fathom",
+  "owner": {"name": "ChristianASC5"},
+  "description": "Fathom's own listing. Installs the plugin from this repository.",
+  "plugins": [
+    {
+      "name": "fathom",
+      "source": "./",
+      "description": "Keeps you learning while agents do the work."
+    }
+  ]
+}

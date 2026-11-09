@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""PreToolUse gate for the predict move.
+
+Holds the first test run of a task until the user has been asked to predict
+its outcome. The gate denies once per task and always lets the retry through,
+whether or not an answer arrived. A session where AskUserQuestion is disabled
+therefore loses one tool call, never the test run.
+
+States per task: pending (denied once) -> answered (record-move saw the
+answer) -> done (the test run went through).
+"""
+import sys
+
+sys.dont_write_bytecode = True  # the plugin folder is replaced on update; keep it clean
+
+import json
+import re
+
+from fathom_runtime import debug_dump, load_state, read_input, record_event, save_state
+
+RUNS_PYTEST = re.compile(r"(^|[\s;&|(/])(pytest|py\.test)(\s|$)|-m\s+pytest(\s|$)")
+
+REASON = (
+    "[fathom move: predict] Hold this test run. First call AskUserQuestion once, "
+    "with header 'Predict', asking the user what they expect this run to do. Give 3 "
+    "concrete outcomes specific to the code under test (for example 'All pass', "
+    "'<a named test> fails', 'Import error') plus a 'Skip' option. Do not say what "
+    "you expect. Then run the same command again; it will go through. If "
+    "AskUserQuestion is unavailable, run the command again without asking."
+)
+
+
+def main() -> None:
+    hook_input = read_input()
+    debug_dump("predict-gate", hook_input)
+    command = hook_input.get("tool_input", {}).get("command", "")
+    session = hook_input.get("session_id", "")
+    # A new user prompt counts as a new task, so at most one move per prompt.
+    task = hook_input.get("prompt_id") or session
+
+    # `if` rules match any part of a compound command and fail open, so re-check
+    # here. Moves never run inside subagents.
+    if hook_input.get("agent_id") or not RUNS_PYTEST.search(command):
+        return
+
+    state = load_state(session)
+    move = state.get("predict")
+    if not move or move.get("task") != task:
+        state["predict"] = {"task": task, "state": "pending"}
+        record_event("predict", "offered")
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": REASON,
+            }
+        }))
+    else:
+        if move["state"] == "pending":
+            record_event("predict", "unanswered")
+        move["state"] = "done"
+    save_state(session, state)
+
+
+if __name__ == "__main__":
+    main()

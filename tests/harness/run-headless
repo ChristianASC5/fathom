@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Run one prompt through Fathom in the sandbox project with no human present.
+#
+# AskUserQuestion only exists in a headless session when a host can answer
+# prompts, so this uses streaming input plus --permission-prompt-tool stdio.
+# The auto-answer hook then picks the first option of each question.
+#
+# Usage: run-headless "<prompt>" [output.jsonl]
+# Needs: claude, jq, uv. Spends real tokens, about $0.05 a run on Sonnet.
+set -euo pipefail
+
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+prompt="${1:?usage: run-headless \"<prompt>\" [output.jsonl]}"
+out="${2:-/dev/stdout}"
+sandbox="$repo/tests/sandbox"
+
+if [ ! -x "$sandbox/.venv/bin/pytest" ]; then
+  uv venv -q "$sandbox/.venv"
+  uv pip install -q --python "$sandbox/.venv/bin/python" pytest
+fi
+
+settings="$(jq -cn --arg cmd "$repo/tests/harness/auto-answer" \
+  '{hooks: {PreToolUse: [{matcher: "AskUserQuestion", hooks: [{type: "command", command: $cmd}]}]}}')"
+
+cd "$sandbox"
+jq -cn --arg p "$prompt" '{type: "user", message: {role: "user", content: $p}}' |
+  PATH="$sandbox/.venv/bin:$PATH" claude -p \
+    --input-format stream-json --output-format stream-json --verbose --include-hook-events \
+    --permission-prompt-tool stdio \
+    --plugin-dir "$repo" --settings "$settings" \
+    --allowedTools "Bash(pytest*)" "AskUserQuestion" \
+    --model sonnet --max-budget-usd 1 \
+    --strict-mcp-config --setting-sources project --no-session-persistence \
+    > "$out"

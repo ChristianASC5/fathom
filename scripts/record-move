@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""PostToolUse on AskUserQuestion: record the answer to a pending move.
+
+Claude Code passes the user's choice in tool_response.answers, a map from the
+question text to the chosen option label. The question's header says which
+move the answer belongs to.
+"""
+import sys
+
+sys.dont_write_bytecode = True  # the plugin folder is replaced on update; keep it clean
+
+import json
+
+from fathom_runtime import debug_dump, load_state, read_input, record_event, save_state
+
+FOLLOW_UP = (
+    "[fathom move: predict] The prediction is recorded. Run the tests now. When "
+    "they finish, tell the user in one line whether their prediction held. If it "
+    "missed, explain the gap in at most three sentences."
+)
+
+
+def predict_answer(hook_input: dict):
+    """Return the label chosen for the Predict question, or None if there isn't one."""
+    questions = hook_input.get("tool_input", {}).get("questions", [])
+    response = hook_input.get("tool_response")
+    answers = response.get("answers", {}) if isinstance(response, dict) else {}
+    for question in questions:
+        if question.get("header") == "Predict":
+            return answers.get(question.get("question"))
+    return None
+
+
+def main() -> None:
+    hook_input = read_input()
+    debug_dump("record-move", hook_input)
+    session = hook_input.get("session_id", "")
+    answer = predict_answer(hook_input)
+
+    state = load_state(session)
+    move = state.get("predict")
+    if answer is None or not move or move.get("state") != "pending":
+        return
+
+    move["state"] = "answered"
+    save_state(session, state)
+    if answer.strip().lower() == "skip":
+        record_event("predict", "skipped")
+        return
+    record_event("predict", "answered", answer=answer)
+    print(json.dumps({
+        "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": FOLLOW_UP}
+    }))
+
+
+if __name__ == "__main__":
+    main()

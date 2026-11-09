@@ -1,0 +1,9 @@
+{
+  "name": "fathom",
+  "version": "0.0.1",
+  "description": "Keeps you learning while agents do the work. Hands you the decisions and predictions worth making yourself, tied to goals you set.",
+  "author": {"name": "ChristianASC5"},
+  "repository": "https://github.com/ChristianASC5/fathom",
+  "license": "MIT",
+  "keywords": ["learning", "skills", "pairing", "hooks"]
+}
