@@ -6,7 +6,7 @@ The research on AI and learning points one way. People who hand the thinking to 
 
 ## Status
 
-Early. The moves work, and you set your goals by editing a file.
+Early. The moves work, and you manage your goals by talking to Claude.
 
 **The trigger.** Any file edit by Claude can start a move. Fathom first checks that you have goals, that you are not in ship mode, and that you have not used up the day's moves. If those pass, it asks Claude Haiku once per task which of your goals the work exercises. If none does, nothing happens and the edit goes through.
 
@@ -18,7 +18,9 @@ Fathom asks at most once per prompt. If you skip, or the session can't show you 
 
 ## Goals and settings
 
-Until setup has a skill for it, write your goals by hand in `~/.fathom/goals.json`:
+Run `/fathom:fathom-goals`, or `/fathom-goals` after an APM install, or just ask Claude to add, change or remove a goal. Claude shows you the wording and waits for your yes before it writes anything. It will also push back on goals that are too broad to match any real work.
+
+Goals live in `~/.fathom/goals.json`. If you prefer, edit the file by hand. This is the format:
 
 ```json
 {"goals": [{"id": "g1", "text": "Write and debug Python list and slicing logic"}]}
