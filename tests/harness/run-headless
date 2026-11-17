@@ -5,6 +5,9 @@
 # prompts, so this uses streaming input plus --permission-prompt-tool stdio.
 # The auto-answer hook then picks the first option of each question.
 #
+# Fathom's data goes to a throwaway folder, so a test run never mixes into your
+# own learning history. Set FATHOM_HOME to choose the folder.
+#
 # Usage: run-headless "<prompt>" [output.jsonl]
 # Needs: claude, jq, uv. Spends real tokens, about $0.05 a run on Sonnet.
 set -euo pipefail
@@ -21,6 +24,9 @@ fi
 
 settings="$(jq -cn --arg cmd "$repo/tests/harness/auto-answer" \
   '{hooks: {PreToolUse: [{matcher: "AskUserQuestion", hooks: [{type: "command", command: $cmd}]}]}}')"
+
+export FATHOM_HOME="${FATHOM_HOME:-$(mktemp -d)}"
+echo "Fathom data for this run: $FATHOM_HOME" >&2
 
 cd "$sandbox"
 jq -cn --arg p "$prompt" '{type: "user", message: {role: "user", content: $p}}' |

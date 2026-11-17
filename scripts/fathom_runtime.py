@@ -1,9 +1,7 @@
 """Helpers shared by Fathom's hook scripts.
 
-Fathom can be installed two ways. As a Claude Code plugin it gets
-CLAUDE_PLUGIN_DATA, a directory that survives plugin updates. Installers that
-unpack a plugin into .claude/ (APM does this) never set that variable, so the
-data directory falls back to a fixed path under the Claude config directory.
+Fathom keeps everything it writes in one folder, ~/.fathom, whichever way it
+was installed. FATHOM_HOME moves that folder, which the tests use.
 
 Nothing here opens a network connection, and nothing stores prompt or code
 text. The event log holds move names, outcomes and the option label a user
@@ -17,11 +15,7 @@ from pathlib import Path
 
 
 def data_dir() -> Path:
-    root = os.environ.get("CLAUDE_PLUGIN_DATA")
-    if not root:
-        config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
-        root = os.path.join(config, "fathom")
-    path = Path(root)
+    path = Path(os.environ.get("FATHOM_HOME") or os.path.expanduser("~/.fathom"))
     path.mkdir(parents=True, exist_ok=True)
     return path
 

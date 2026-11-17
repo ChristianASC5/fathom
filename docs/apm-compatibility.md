@@ -1,8 +1,8 @@
 # APM compatibility
 
-Fathom's predict move works after an `apm install`. The Partner output style does not come along, and neither does anything else that depends on Claude Code loading Fathom as a plugin.
+Fathom works after an `apm install`, with one extra step. Run `/fathom-setup` once to add the Partner output style, which APM cannot install.
 
-Tested on 2026-11-09 with APM 0.35.0 and Claude Code 2.1.319, project scope, `--target claude`. User scope, `apm install -g`, is untested.
+Tested on 2026-11-10 with APM 0.35.0 and Claude Code 2.1.319, project scope, `--target claude`. User scope, `apm install -g`, is untested.
 
 ## Why the two installs differ
 
@@ -15,26 +15,35 @@ Claude Code's own installer registers Fathom as a plugin and runs it from a cach
 | Hooks | Merged into `.claude/settings.json`. The `if` rules survive. |
 | Hook scripts | Copied to `.claude/hooks/fathom/scripts/`, with `${CLAUDE_PLUGIN_ROOT}` in each hook command rewritten to that path. |
 | Predict move | Works. Claude Code denied the test run, asked the question, recorded the answer and ran the tests. |
-| Data directory | `CLAUDE_PLUGIN_DATA` is not set, so Fathom falls back to `~/.claude/fathom/`. |
-| Partner output style | Not installed. APM has no output style type and skips the `output-styles/` folder. |
-| Skills | Fathom ships none yet. A sample skill landed at `.claude/skills/goals/`, so it would be `/goals` and not `/fathom:goals`. APM left a `${CLAUDE_PLUGIN_ROOT}` reference inside the skill text unchanged, where it points at nothing. |
-| Plugin options | Fathom declares none yet. APM does not read `userConfig` from `plugin.json`, going by its source. I did not test this. |
+| Data | In `~/.fathom`, the same folder a plugin install uses. |
+| Skills | Copied to `.claude/skills/`, each with the files in its folder. They are `/fathom-setup` and `/fathom-uninstall`, without the `fathom:` prefix a plugin gives them. |
+| Partner output style | Not installed. APM has no output style type and skips the `output-styles/` folder. `/fathom-setup` adds it. |
 
-Two more things to know.
+## What `/fathom-setup` does
 
-Hooks installed this way belong to the project's settings file. Disabling a plugin in Claude Code does not turn them off. `apm uninstall` removes them.
+It runs `skills/fathom-setup/fathom_setup.py install`, which works out how Fathom was installed from where the script sits.
 
-APM also copies the whole repository into the consumer's `apm_modules/` folder, tests included. The consumer's own `pytest` run collected Fathom's sandbox test and stopped with a collection error. That is why the sandbox test file is named `check_chunks.py`, which pytest ignores by default.
+As a plugin, it changes nothing. The plugin already has the output style.
+
+After an APM install, it copies the Partner style to `.claude/output-styles/fathom-partner.md` and sets `outputStyle` to `Partner`. For a project that goes in `.claude/settings.local.json`, the file git ignores. For a user-level install it goes in `~/.claude/settings.json`. It records the output style you had before in `~/.fathom/installs.json`.
+
+`/fathom-uninstall` deletes the style file and puts your previous output style back. If you picked a different style after setup, it leaves your choice alone.
+
+In the test, a new session in the APM project reported `Partner` as its output style and followed the style's instructions.
+
+## Things to know
+
+Hooks installed by APM belong to the project's settings file. Disabling a plugin in Claude Code does not turn them off. `apm uninstall` removes them.
+
+APM copies the whole repository into the consumer's `apm_modules/` folder, tests included. The consumer's own `pytest` run collected Fathom's sandbox test and stopped with a collection error. That is why the sandbox test file is named `check_chunks.py`, which pytest ignores by default.
+
+`apm install <local folder>` refuses a checkout that contains `tests/sandbox/.venv`, because the virtualenv holds symlinks that point outside the folder. Install from GitHub, or from a copy without the virtualenv.
 
 ## Rules Fathom follows because of this
 
-- Scripts find the data directory through `fathom_runtime.data_dir()`, which has the fallback. Nothing reads `CLAUDE_PLUGIN_DATA` directly.
+- Everything Fathom writes goes to `~/.fathom`. Scripts never use `CLAUDE_PLUGIN_DATA`, which only a plugin gets.
 - Scripts import their helpers from their own folder and never read `CLAUDE_PLUGIN_ROOT` at run time.
-- A move carries its instructions in the hook's own output, so it works without the Partner output style.
+- A skill keeps the files it needs in its own folder and reaches them through `${CLAUDE_SKILL_DIR}`. That is why the Partner style exists twice, in `output-styles/` for the plugin and in `skills/fathom-setup/` for setup. A unit test fails if the two copies differ.
+- Skill names start with `fathom-`, so they are safe without the plugin prefix.
+- A move carries its instructions in the hook's own output, so it works before setup has added the output style.
 - No file under `tests/` may match pytest's default patterns unless it passes in any project.
-
-## What full compatibility would still need
-
-- A stand-in for the output style. A SessionStart hook could inject the Partner instructions as context when Fathom is not running as a plugin. The text would have to live beside the hook scripts, because APM does not copy `output-styles/`.
-- A config file in the data directory, to replace plugin options.
-- Skill names that are safe without the `fathom:` prefix, such as `fathom-goals`, and no `${CLAUDE_PLUGIN_ROOT}` in skill text.
