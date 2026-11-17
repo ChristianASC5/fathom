@@ -23,6 +23,10 @@ Claude Code's own installer registers Fathom as a plugin and runs it from a cach
 
 The hooks now use a `Stop` event and a `PreToolUse` matcher for file edits (`Write|Edit|MultiEdit|NotebookEdit`). APM should merge them into `.claude/settings.json` the same way as before, but this is untested. The edit trigger also calls `claude` to classify the work, so `claude` must be on your PATH.
 
+## Skill added in 0.0.4
+
+`/fathom-goals` manages the goals in `~/.fathom/goals.json`. It follows the same rules as the other skills: its script sits in its own folder, and a unit test runs it from an APM-style `.claude/skills/` layout. A real APM install has not been tested yet.
+
 ## What `/fathom-setup` does
 
 It runs `skills/fathom-setup/fathom_setup.py install`, which works out how Fathom was installed from where the script sits.
