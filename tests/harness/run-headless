@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Run one prompt through Fathom in the sandbox project with no human present.
+# Run one prompt through Fathom in a copy of the sandbox project with no human present.
 #
 # AskUserQuestion only exists in a headless session when a host can answer
 # prompts, so this uses streaming input plus --permission-prompt-tool stdio.
-# The auto-answer hook then picks the first option of each question.
+# The auto-answer hook then answers each question. Approach questions take the
+# option at index $AUTO_PICK (default 0); every other question takes option 0.
 #
-# Fathom's data goes to a throwaway folder, so a test run never mixes into your
-# own learning history. Set FATHOM_HOME to choose the folder.
+# The prompt runs in a fresh copy of the sandbox, so edits never touch the repo.
+# Fathom's data goes to a throwaway folder seeded with tests/harness/goals.json.
+# Set FATHOM_HOME to choose the folder. Set FATHOM_SEED_MASTERY="g3=0.6" to start
+# a goal with mastery, which makes Fathom offer the Approach move.
+# The classifier reads the session transcript, so the session is saved and the
+# script deletes it afterwards.
 #
 # Usage: run-headless "<prompt>" [output.jsonl]
-# Needs: claude, jq, uv. Spends real tokens, about $0.05 a run on Sonnet.
+# Needs: claude, jq, uv. Spends real tokens on the session and the classifier.
 set -euo pipefail
 
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -22,19 +27,32 @@ if [ ! -x "$sandbox/.venv/bin/pytest" ]; then
   uv pip install -q --python "$sandbox/.venv/bin/python" pytest
 fi
 
+work="$(mktemp -d)"
+cp "$sandbox/chunks.py" "$sandbox/check_chunks.py" "$sandbox/pytest.ini" "$work/"
+work="$(cd "$work" && pwd -P)"
+transcripts="$HOME/.claude/projects/$(printf '%s' "$work" | tr '/.' '--')"
+trap 'rm -rf "$work" "$transcripts"' EXIT
+
 settings="$(jq -cn --arg cmd "$repo/tests/harness/auto-answer" \
   '{hooks: {PreToolUse: [{matcher: "AskUserQuestion", hooks: [{type: "command", command: $cmd}]}]}}')"
 
 export FATHOM_HOME="${FATHOM_HOME:-$(mktemp -d)}"
+mkdir -p "$FATHOM_HOME"
+cp "$repo/tests/harness/goals.json" "$FATHOM_HOME/goals.json"
+if [ -n "${FATHOM_SEED_MASTERY:-}" ]; then
+  jq -cn --arg seed "$FATHOM_SEED_MASTERY" \
+    '{goals: ($seed | split(",") | map(split("=") | {key: .[0], value: {mastery: (.[1] | tonumber), checks: 0}}) | from_entries)}' \
+    > "$FATHOM_HOME/learner.json"
+fi
 echo "Fathom data for this run: $FATHOM_HOME" >&2
 
-cd "$sandbox"
+cd "$work"
 jq -cn --arg p "$prompt" '{type: "user", message: {role: "user", content: $p}}' |
   PATH="$sandbox/.venv/bin:$PATH" claude -p \
     --input-format stream-json --output-format stream-json --verbose --include-hook-events \
     --permission-prompt-tool stdio \
     --plugin-dir "$repo" --settings "$settings" \
-    --allowedTools "Bash(pytest*)" "AskUserQuestion" \
+    --allowedTools Read Edit Write MultiEdit "Bash(pytest*)" "Bash(python -m pytest*)" "Bash(python3 -m pytest*)" AskUserQuestion \
     --model sonnet --max-budget-usd 1 \
-    --strict-mcp-config --setting-sources project --no-session-persistence \
+    --strict-mcp-config --setting-sources project \
     > "$out"

@@ -1,15 +1,18 @@
 {
   "hooks": {
     "PreToolUse": [
-      {"matcher": "Bash", "hooks": [
-        {"type": "command", "if": "Bash(pytest*)", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/predict-gate"},
-        {"type": "command", "if": "Bash(python -m pytest*)", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/predict-gate"},
-        {"type": "command", "if": "Bash(python3 -m pytest*)", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/predict-gate"}
+      {"matcher": "Write|Edit|MultiEdit|NotebookEdit", "hooks": [
+        {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/edit-gate", "timeout": 30}
       ]}
     ],
     "PostToolUse": [
       {"matcher": "AskUserQuestion", "hooks": [
         {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/record-move"}
+      ]}
+    ],
+    "Stop": [
+      {"hooks": [
+        {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/stop-check"}
       ]}
     ]
   }

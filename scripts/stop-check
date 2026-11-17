@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Stop hook: the AFTER move.
+
+Blocks Claude's first stop of a task once, so it asks one check question.
+When the user has answered, the next stop reads Claude's Held or Missed line
+and updates mastery for the goal.
+"""
+import sys
+
+sys.dont_write_bytecode = True  # the plugin folder is replaced on update; keep it clean
+
+import json
+import os
+import re
+
+from fathom_runtime import (debug_dump, load_goals, load_learner, load_state, read_input,
+                            record_event, save_learner, save_state)
+
+LEARNING_RATE = 0.3
+VERDICT = re.compile(r"(?m)^\W*(Held|Missed)\b")
+
+REASON = (
+    "Fathom: before you finish, give the user one check on this change. They are working on a "
+    "learning goal: {goal_text}. Call AskUserQuestion with header 'Check' and one question "
+    "about whether the change does what was needed, for example which case they would check "
+    "first to trust it, or which input would still break it. Offer 3 options plus 'Skip'. Do "
+    "not say which answer you think is best. After the answer, reply with one line that starts "
+    "with 'Held' if their answer is sound or 'Missed' if it is not, then at most three "
+    "sentences on the gap if they missed. Then stop. If AskUserQuestion is not available, "
+    "just stop."
+)
+
+
+def last_assistant_text(hook_input: dict) -> str:
+    message = hook_input.get("last_assistant_message")
+    if isinstance(message, str):
+        return message
+    try:
+        with open(hook_input.get("transcript_path") or "") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        content = (entry.get("message") or {}).get("content") if isinstance(entry, dict) else None
+        if not isinstance(entry, dict) or entry.get("type") != "assistant":
+            continue
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = "\n".join(b.get("text", "") for b in content
+                             if isinstance(b, dict) and b.get("type") == "text")
+        else:
+            continue
+        if text.strip():
+            return text
+    return ""
+
+
+def score(hook_input: dict, state: dict) -> None:
+    goal = state["classified"]["goal"]
+    match = VERDICT.search(last_assistant_text(hook_input))
+    if match:
+        held = match.group(1) == "Held"
+        learner = load_learner()
+        entry = learner["goals"].setdefault(goal, {"mastery": 0.0, "checks": 0})
+        mastery = entry.get("mastery", 0.0)
+        entry["mastery"] = mastery + LEARNING_RATE * ((1.0 if held else 0.0) - mastery)
+        entry["checks"] = entry.get("checks", 0) + 1
+        save_learner(learner)
+        record_event("check", "verdict", goal=goal, verdict="held" if held else "missed")
+    else:
+        record_event("check", "verdict_unreadable", goal=goal)
+    state["scored"] = True
+
+
+def main() -> None:
+    if os.environ.get("FATHOM_CLASSIFIER") == "1":
+        return
+    hook_input = read_input()
+    debug_dump("stop-check", hook_input)
+    session = hook_input.get("session_id", "")
+    state = load_state(session)
+    if state.get("move") != "after":
+        return
+
+    if state.get("answer") and not state.get("scored"):
+        score(hook_input, state)
+        save_state(session, state)
+        return
+    if hook_input.get("stop_hook_active") or state.get("after_blocked"):
+        return
+
+    goal = state["classified"]["goal"]
+    state["after_blocked"] = True
+    save_state(session, state)
+    record_event("check", "offered", goal=goal)
+    goal_text = {g["id"]: g["text"] for g in load_goals()}.get(goal, "")
+    print(json.dumps({"decision": "block", "reason": REASON.format(goal_text=goal_text)}))
+
+
+if __name__ == "__main__":
+    main()

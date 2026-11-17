@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
-"""Test-only PreToolUse hook: pick the first option of every question."""
+"""Test-only PreToolUse hook: answer every question without a human.
+
+Approach questions take the option at index AUTO_PICK (default 0, clamped to
+the options available). Every other question takes the first option.
+"""
 import json
+import os
 import sys
 
 hook_input = json.load(sys.stdin)
 tool_input = hook_input.get("tool_input", {})
-answers = {
-    q["question"]: q["options"][0]["label"]
-    for q in tool_input.get("questions", [])
-    if q.get("options")
-}
+try:
+    pick = int(os.environ.get("AUTO_PICK", "0"))
+except ValueError:
+    pick = 0
+
+
+def choose(question):
+    options = question["options"]
+    index = min(max(pick, 0), len(options) - 1) if question.get("header") == "Approach" else 0
+    return options[index]["label"]
+
+
+answers = {q["question"]: choose(q) for q in tool_input.get("questions", []) if q.get("options")}
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "PreToolUse",
