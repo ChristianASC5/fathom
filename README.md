@@ -30,15 +30,27 @@ Installing Fathom turns on its output style, Partner, and that replaces any outp
 apm install ChristianASC5/fathom --target claude
 ```
 
-This works, with limits. APM copies Fathom's hooks into your project's `.claude/` folder and never loads it as a plugin, so you get the predict move without the Partner output style. [docs/apm-compatibility.md](docs/apm-compatibility.md) has the details.
+APM copies Fathom's hooks and skills into your project's `.claude/` folder and never loads it as a plugin. The predict move works straight away. The Partner output style is missing, because only a plugin can ship one. Run `/fathom-setup` once in Claude Code to add it, then start a new session.
+
+[docs/apm-compatibility.md](docs/apm-compatibility.md) has the details.
+
+## Uninstall
+
+Run `/fathom:fathom-uninstall` first. After an APM install the command is `/fathom-uninstall`. It asks whether to delete your learning history, undoes what setup changed, and prints the command that removes Fathom itself.
+
+Removing the plugin on its own leaves `~/.fathom` in place.
 
 ## What Fathom stores
 
-Everything stays on your machine. Fathom makes no network calls.
+Everything stays on your machine, in `~/.fathom`, whichever way you installed. Fathom makes no network calls. Set `FATHOM_HOME` to keep the folder somewhere else.
 
-It keeps one log, `events.jsonl`, in the data directory Claude Code gives the plugin under `~/.claude/plugins/data/`. Each line holds a timestamp, the move, what happened, and the label of the option you picked. It never holds your prompts, your code, or the question text.
+| File | Holds |
+| --- | --- |
+| `events.jsonl` | One line per move: a timestamp, the move, what happened, and the label of the option you picked. Never your prompts, your code, or the question text. |
+| `state/` | Which move each session is in the middle of. |
+| `installs.json` | Written by `/fathom-setup`. The output style each `.claude/` folder had before setup changed it, so uninstall can put it back. |
 
-Setting `FATHOM_DEBUG=1` breaks that rule on purpose. It writes the raw input of every hook, prompts and commands included, to `debug-hook-inputs.jsonl` in the same directory. It is off unless you set it.
+Setting `FATHOM_DEBUG=1` breaks the no-content rule on purpose. It writes the raw input of every hook, prompts and commands included, to `debug-hook-inputs.jsonl` in the same folder. It is off unless you set it.
 
 ## Development
 
@@ -55,7 +67,7 @@ cd tests/sandbox
 claude --plugin-dir ../..
 ```
 
-`tests/harness/run-headless` does the same with no human present. A test-only hook picks the first option of every question. It needs `claude`, `jq` and `uv`, and each run costs about five cents on Sonnet.
+`tests/harness/run-headless` does the same with no human present. A test-only hook picks the first option of every question, and Fathom's data goes to a throwaway folder. It needs `claude`, `jq` and `uv`, and each run costs about five cents on Sonnet.
 
 ```sh
 tests/harness/run-headless 'Run the test suite with `pytest -q` and tell me the result.' run.jsonl

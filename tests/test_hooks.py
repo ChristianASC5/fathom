@@ -28,7 +28,7 @@ class HookTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.data = Path(self.tmp.name) / "data"
-        self.env = {**os.environ, "CLAUDE_PLUGIN_DATA": str(self.data)}
+        self.env = {**os.environ, "FATHOM_HOME": str(self.data)}
         self.env.pop("FATHOM_DEBUG", None)
 
     def run_hook(self, script, hook_input):
@@ -83,12 +83,11 @@ class HookTest(unittest.TestCase):
         self.assertIsNone(self.run_hook("record-move", answer_call("All pass", header="Approach")))
         self.assertEqual(self.events(), [("predict", "offered")])
 
-    def test_data_falls_back_to_the_claude_config_dir_without_plugin_data(self):
-        del self.env["CLAUDE_PLUGIN_DATA"]
-        config = Path(self.tmp.name) / "config"
-        self.env["CLAUDE_CONFIG_DIR"] = str(config)
+    def test_data_defaults_to_dot_fathom_in_the_home_directory(self):
+        del self.env["FATHOM_HOME"]
+        self.env["HOME"] = self.tmp.name
         self.run_hook("predict-gate", bash_call("pytest -q"))
-        self.assertTrue((config / "fathom" / "events.jsonl").exists())
+        self.assertTrue((Path(self.tmp.name) / ".fathom" / "events.jsonl").exists())
 
     def test_hooks_leave_no_bytecode_in_the_plugin_folder(self):
         self.run_hook("predict-gate", bash_call("pytest -q"))
