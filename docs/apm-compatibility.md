@@ -14,10 +14,14 @@ Claude Code's own installer registers Fathom as a plugin and runs it from a cach
 | --- | --- |
 | Hooks | Merged into `.claude/settings.json`. The `if` rules survive. |
 | Hook scripts | Copied to `.claude/hooks/fathom/scripts/`, with `${CLAUDE_PLUGIN_ROOT}` in each hook command rewritten to that path. |
-| Predict move | Works. Claude Code denied the test run, asked the question, recorded the answer and ran the tests. |
+| Predict move | Worked in the 0.0.2 test. That move has since been replaced by the edit trigger. |
 | Data | In `~/.fathom`, the same folder a plugin install uses. |
 | Skills | Copied to `.claude/skills/`, each with the files in its folder. They are `/fathom-setup` and `/fathom-uninstall`, without the `fathom:` prefix a plugin gives them. |
 | Partner output style | Not installed. APM has no output style type and skips the `output-styles/` folder. `/fathom-setup` adds it. |
+
+## Hooks added in 0.0.3
+
+The hooks now use a `Stop` event and a `PreToolUse` matcher for file edits (`Write|Edit|MultiEdit|NotebookEdit`). APM should merge them into `.claude/settings.json` the same way as before, but this is untested. The edit trigger also calls `claude` to classify the work, so `claude` must be on your PATH.
 
 ## What `/fathom-setup` does
 

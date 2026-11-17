@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""PreToolUse gate for file edits: the trigger for every Fathom move.
+
+The first edit of a task runs code checks, then one Haiku classification of
+which learning goal the work exercises. A relevant goal gets either a BEFORE
+move (this hook holds the edit once so the user picks the approach) or an
+AFTER move (stop-check asks a check question when Claude finishes). Mastery of
+the goal decides the side. Later edits in the same task pass without work.
+
+Every failure path lets the edit through.
+"""
+import sys
+
+sys.dont_write_bytecode = True  # the plugin folder is replaced on update; keep it clean
+
+import json
+import os
+import random
+import time
+
+from fathom_classify import classify
+from fathom_runtime import (count_events_today, debug_dump, load_config, load_goals, load_learner,
+                            load_state, mastery_for, read_input, record_event, save_state,
+                            session_digest)
+
+REASON = (
+    "Fathom: hold this edit. The user is working on a learning goal: {goal_text}. "
+    "This task has a real design choice, so the user picks the approach. Do not edit yet. "
+    "Call AskUserQuestion with header 'Approach'. In the question, state the problem in one "
+    "line. Offer 2 or 3 genuinely viable approaches as options, each described neutrally with "
+    "its main trade-off, and list your own planned approach as option {position}. Do not say "
+    "which option is yours. Add a final option labelled 'You decide'. After the answer, build "
+    "the approach the user picked, even if it differs from your plan; for 'You decide', build "
+    "your plan. If you think their pick is a mistake, say why in one sentence and ask once "
+    "whether to go ahead. If AskUserQuestion is not available, make your edit as planned."
+)
+
+
+def skip_reason(goals: list, config: dict) -> str | None:
+    if not goals:
+        return "no_goals"
+    if config["mode"] == "ship":
+        return "ship_mode"
+    if count_events_today("offered") >= config["moves_per_day"]:
+        return "budget"
+    return None
+
+
+def main() -> None:
+    if os.environ.get("FATHOM_CLASSIFIER") == "1":
+        return
+    hook_input = read_input()
+    debug_dump("edit-gate", hook_input)
+    if hook_input.get("agent_id"):
+        return
+
+    session = hook_input.get("session_id", "")
+    task = hook_input.get("prompt_id") or "unknown"
+    state = load_state(session)
+    if state.get("task") != task:
+        state = {"task": task}
+    if "classified" in state:
+        return
+
+    goals, config = load_goals(), load_config()
+    reason = skip_reason(goals, config)
+    if reason:
+        state["classified"] = {"skipped": reason}
+        save_state(session, state)
+        record_event("trigger", "skipped", reason=reason)
+        return
+
+    tool_input = hook_input.get("tool_input") or {}
+    digest = session_digest(hook_input.get("transcript_path", ""),
+                            hook_input.get("tool_name", ""), tool_input)
+    started = time.monotonic()
+    result = classify(goals, digest)
+    classify_ms = int((time.monotonic() - started) * 1000)
+    if result is None:
+        state["classified"] = {"error": True}
+        save_state(session, state)
+        record_event("trigger", "classifier_error")
+        return
+
+    state["classified"] = {k: result[k] for k in ("goal", "confidence", "has_choice")}
+    record_event("trigger", "classified", classify_ms=classify_ms, **state["classified"])
+    goal_text = {g["id"]: g["text"] for g in goals}.get(result["goal"])
+    if goal_text is None or result["confidence"] not in ("high", "medium"):
+        save_state(session, state)
+        return
+
+    if mastery_for(load_learner(), result["goal"]) >= config["mastery_threshold"] and result["has_choice"]:
+        position = random.choice([1, 2])
+        state.update(move="before", position=position)
+        save_state(session, state)
+        record_event("approach", "offered", goal=result["goal"])
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": REASON.format(goal_text=goal_text, position=position),
+        }}))
+        return
+
+    state["move"] = "after"
+    save_state(session, state)
+
+
+if __name__ == "__main__":
+    main()

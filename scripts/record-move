@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PostToolUse on AskUserQuestion: record the answer to a pending move.
+"""PostToolUse on AskUserQuestion: record the answer to a Fathom move.
 
 Claude Code passes the user's choice in tool_response.answers, a map from the
 question text to the chosen option label. The question's header says which
@@ -9,48 +9,38 @@ import sys
 
 sys.dont_write_bytecode = True  # the plugin folder is replaced on update; keep it clean
 
-import json
-
 from fathom_runtime import debug_dump, load_state, read_input, record_event, save_state
 
-FOLLOW_UP = (
-    "[fathom move: predict] The prediction is recorded. Run the tests now. When "
-    "they finish, tell the user in one line whether their prediction held. If it "
-    "missed, explain the gap in at most three sentences."
-)
-
-
-def predict_answer(hook_input: dict):
-    """Return the label chosen for the Predict question, or None if there isn't one."""
-    questions = hook_input.get("tool_input", {}).get("questions", [])
-    response = hook_input.get("tool_response")
-    answers = response.get("answers", {}) if isinstance(response, dict) else {}
-    for question in questions:
-        if question.get("header") == "Predict":
-            return answers.get(question.get("question"))
-    return None
+MOVES = {"Approach": "approach", "Check": "check"}
 
 
 def main() -> None:
     hook_input = read_input()
     debug_dump("record-move", hook_input)
+    questions = (hook_input.get("tool_input") or {}).get("questions") or []
+    question = next((q for q in questions if isinstance(q, dict) and q.get("header") in MOVES), None)
+    if question is None:
+        return
+    move = MOVES[question["header"]]
+
     session = hook_input.get("session_id", "")
-    answer = predict_answer(hook_input)
-
     state = load_state(session)
-    move = state.get("predict")
-    if answer is None or not move or move.get("state") != "pending":
+    goal = (state.get("classified") or {}).get("goal")
+    response = hook_input.get("tool_response")
+    answers = response.get("answers") if isinstance(response, dict) else None
+    label = answers.get(question.get("question")) if isinstance(answers, dict) else None
+    if not isinstance(label, str):
+        record_event(move, "unanswered", goal=goal)
         return
 
-    move["state"] = "answered"
+    if label.strip().lower() == "skip":
+        record_event(move, "skipped", goal=goal)
+        if move == "check":
+            state["scored"] = True
+    else:
+        record_event(move, "answered", goal=goal, label=label)
+    state["answer"] = label
     save_state(session, state)
-    if answer.strip().lower() == "skip":
-        record_event("predict", "skipped")
-        return
-    record_event("predict", "answered", answer=answer)
-    print(json.dumps({
-        "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": FOLLOW_UP}
-    }))
 
 
 if __name__ == "__main__":

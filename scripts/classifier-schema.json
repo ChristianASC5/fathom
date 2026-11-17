@@ -1,0 +1,6 @@
+{"type":"object","properties":{
+  "goal":{"type":["string","null"],"description":"id of the goal this work exercises, or null"},
+  "confidence":{"type":"string","enum":["high","medium","low"]},
+  "has_choice":{"type":"boolean","description":"true if there are two or more reasonable approaches worth weighing"},
+  "why":{"type":"string","description":"one short sentence"}},
+ "required":["goal","confidence","has_choice","why"],"additionalProperties":false}

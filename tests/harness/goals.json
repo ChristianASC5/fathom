@@ -1,0 +1,5 @@
+{"goals": [
+  {"id": "g1", "text": "Write and debug Python list and slicing logic, including off-by-one errors."},
+  {"id": "g2", "text": "Write and tune PostgreSQL queries for the billing reports, including reading query plans."},
+  {"id": "g3", "text": "Design error handling and input validation for Python functions."}
+]}
